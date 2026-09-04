@@ -1,0 +1,64 @@
+# =============================================================================
+# VGS — Pipeline de destruction (manuel uniquement)
+# =============================================================================
+
+name: Destroy VGS Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type DESTROY to confirm'
+        required: true
+        default: ''
+
+concurrency:
+  group: vgs-destroy
+  cancel-in-progress: false
+
+jobs:
+  destroy:
+    name: Destroy Terraform + Worker
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm == 'DESTROY'
+    environment:
+      name: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.9.0'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Wrangler
+        working-directory: worker
+        run: npm ci || npm install
+
+      - name: Delete Worker
+        working-directory: worker
+        run: npx wrangler delete --force
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init
+        env:
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      - name: Terraform Destroy
+        working-directory: terraform
+        run: terraform destroy -no-color -auto-approve
+        env:
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TF_VAR_render_hostname: ${{ vars.RENDER_HOSTNAME }}

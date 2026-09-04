@@ -1,0 +1,219 @@
+# =============================================================================
+# VGS — Pipeline CI/CD principal
+# Déploiement automatisé Terraform + Worker Cloudflare
+# =============================================================================
+
+name: Deploy VGS (Terraform + Worker)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'terraform/**'
+      - 'worker/**'
+      - '.github/workflows/deploy-vgs.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'terraform/**'
+      - 'worker/**'
+      - '.github/workflows/deploy-vgs.yml'
+  workflow_dispatch:
+    inputs:
+      skip_terraform:
+        description: 'Skip Terraform deploy (Worker only)'
+        type: boolean
+        default: false
+      skip_worker:
+        description: 'Skip Worker deploy (Terraform only)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: vgs-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  TF_VERSION: '1.9.0'
+  NODE_VERSION: '20'
+
+jobs:
+  # ===========================================================================
+  # Job 1 — Validation
+  # ===========================================================================
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.check.outputs.should_deploy }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Format
+        working-directory: terraform
+        run: terraform fmt -check -recursive
+        continue-on-error: true
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init -backend=false
+
+      - name: Terraform Validate
+        working-directory: terraform
+        run: terraform validate -no-color
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Worker dependencies
+        working-directory: worker
+        run: npm ci || npm install
+
+      - name: Type check Worker
+        working-directory: worker
+        run: npx tsc --noEmit
+
+      - name: Check deployment context
+        id: check
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "should_deploy=false" >> $GITHUB_OUTPUT
+            echo "PR detected — validation only, no deployment"
+          else
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+            echo "Deployment will proceed"
+          fi
+
+  # ===========================================================================
+  # Job 2 — Déploiement Terraform
+  # ===========================================================================
+  deploy-terraform:
+    name: Deploy Terraform
+    needs: validate
+    if: needs.validate.outputs.should_deploy == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://app.vigo-services.com
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init
+        env:
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      - name: Terraform Plan
+        working-directory: terraform
+        run: terraform plan -no-color -out=tfplan
+        env:
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TF_VAR_render_hostname: ${{ vars.RENDER_HOSTNAME }}
+
+      - name: Terraform Apply
+        if: github.event.inputs.skip_terraform != 'true'
+        working-directory: terraform
+        run: terraform apply -no-color -auto-approve tfplan
+        env:
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TF_VAR_render_hostname: ${{ vars.RENDER_HOSTNAME }}
+
+      - name: Upload Terraform state artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-state
+          path: terraform/terraform.tfstate
+          retention-days: 30
+
+  # ===========================================================================
+  # Job 3 — Déploiement Worker
+  # ===========================================================================
+  deploy-worker:
+    name: Deploy Worker
+    needs: validate
+    if: needs.validate.outputs.should_deploy == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Wrangler
+        working-directory: worker
+        run: npm ci || npm install
+
+      - name: Deploy Worker
+        if: github.event.inputs.skip_worker != 'true'
+        working-directory: worker
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Set Worker secrets
+        if: github.event.inputs.skip_worker != 'true'
+        working-directory: worker
+        run: |
+          echo "${{ secrets.WHATSAPP_APP_SECRET }}" | npx wrangler secret put WHATSAPP_APP_SECRET
+          echo "${{ secrets.WHATSAPP_VERIFY_TOKEN }}" | npx wrangler secret put WHATSAPP_VERIFY_TOKEN
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  # ===========================================================================
+  # Job 4 — Vérification post-déploiement
+  # ===========================================================================
+  verify:
+    name: Verify Deployment
+    needs: [deploy-terraform, deploy-worker]
+    if: always() && needs.deploy-terraform.result == 'success' && needs.deploy-worker.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify DNS resolution
+        run: |
+          echo "Testing DNS for app.vigo-services.com..."
+          dig +short app.vigo-services.com || echo "DNS not yet propagated (normal if zone just created)"
+
+      - name: Deployment summary
+        run: |
+          echo "## VGS Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Terraform (Cloudflare infra) | Deployed |" >> $GITHUB_STEP_SUMMARY
+          echo "| Worker (WhatsApp proxy) | Deployed |" >> $GITHUB_STEP_SUMMARY
+          echo "| DNS propagation | In progress |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. Configure nameservers at your registrar (see Terraform output)" >> $GITHUB_STEP_SUMMARY
+          echo "2. Set webhook URL in Meta App Dashboard" >> $GITHUB_STEP_SUMMARY
+          echo "3. Verify https://app.vigo-services.com is reachable" >> $GITHUB_STEP_SUMMARY

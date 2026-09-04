@@ -1,0 +1,11 @@
+# =============================================================================
+# Exemple de configuration — copier en terraform.tfvars et adapter
+# =============================================================================
+
+# Cloudflare
+cloudflare_api_token   = "votre-token-api-cloudflare-ici"
+cloudflare_account_id  = "c17747e4aa9b6e707a741a1551dc6fc8"
+zone_name              = "vigo-services.com"
+
+# Render — remplacez par votre hostname Render réel
+render_hostname        = "vigo-services.onrender.com"

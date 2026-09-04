@@ -1,0 +1,16 @@
+{
+  "name": "vgs-whatsapp-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "types": "wrangler types"
+  },
+  "devDependencies": {
+    "wrangler": "^3.80.0",
+    "@cloudflare/workers-types": "^4.20250101.0",
+    "typescript": "^5.5.0"
+  }
+}
