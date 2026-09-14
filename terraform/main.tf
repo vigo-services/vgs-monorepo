@@ -192,19 +192,18 @@ resource "cloudflare_notification_policy" "security_alerts" {
   }
 }
 
-resource "cloudflare_notification_policy" "security_alerts "origin_unreachable"{                                                                                   enabled = true
-                           
+resource "cloudflare_notification_policy" "origin_unreachable" {
+  enabled = true
   account_id  = var.cloudflare_account_id
   name        = "VGS - Origin indisponible"
   description = "Alerte si Render (origin) est injoignable"
   alert_type  = "origin_error"
-
   email_integration {
     id = "cloudflare-notification-email"
   }
-
   filters {
     enabled = ["on"]
   }
-}                                                                                                                                                 enabled = true
+}
+enabled = true
 
