@@ -177,7 +177,7 @@ resource "cloudflare_bot_management" "bot_fight_mode" {
 # -----------------------------------------------------------------------------
 # Notifications
 # -----------------------------------------------------------------------------
-resource "cloudflare_notification_policy" "security_alerts" {
+resource "cloudflare_notification_policy" "security_alerts"{
   account_id  = var.cloudflare_account_id
   name        = "VGS - Alertes sécurité"
   description = "Notifications pour attaques et incidents"
@@ -192,18 +192,15 @@ resource "cloudflare_notification_policy" "security_alerts" {
   }
 }
 
-resource "cloudflare_notification_policy" "origin_unreachable" {
-  enabled = true
+resource "cloudflare_notification_policy" "origin_unreachable"{
   account_id  = var.cloudflare_account_id
   name        = "VGS - Origin indisponible"
   description = "Alerte si Render (origin) est injoignable"
   alert_type  = "origin_error"
   email_integration {
     id = "cloudflare-notification-email"
-  }
+}
   filters {
     enabled = ["on"]
   }
 }
-enabled = true
-
