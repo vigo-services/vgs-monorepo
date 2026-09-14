@@ -96,7 +96,6 @@ resource "cloudflare_ruleset" "rate_limit_auth" {
       characteristics = ["ip.src"]
       period         = 60
       requests_per_period = 10
-      duration_timeout = 600
     }
     expression  = "(http.request.uri.path starts with \"/auth\" and http.request.method eq \"POST\")"
     description = "Block >10 POST /auth par minute par IP"
@@ -120,7 +119,6 @@ resource "cloudflare_ruleset" "rate_limit_api" {
       characteristics = ["ip.src"]
       period         = 60
       requests_per_period = 120
-      duration_timeout = 300
     }
     expression  = "(http.request.uri.path starts with \"/api\")"
     description = "Challenge >120 req /api par minute par IP"
@@ -172,7 +170,7 @@ resource "cloudflare_ruleset" "whatsapp_webhook" {
 # -----------------------------------------------------------------------------
 resource "cloudflare_bot_management" "bot_fight_mode" {
   zone_id      = cloudflare_zone.vigo_services.id
-  enable_jsd   = true
+  enable_js   = true
   fight_mode   = true
 }
 
@@ -194,7 +192,8 @@ resource "cloudflare_notification_policy" "security_alerts" {
   }
 }
 
-resource "cloudflare_notification_policy" "origin_unreachable" {
+resource "cloudflare_notification_policy" "security_alerts "origin_unreachable"{                                                                                   enabled = true
+                           
   account_id  = var.cloudflare_account_id
   name        = "VGS - Origin indisponible"
   description = "Alerte si Render (origin) est injoignable"
@@ -207,4 +206,5 @@ resource "cloudflare_notification_policy" "origin_unreachable" {
   filters {
     enabled = ["on"]
   }
-}
+}                                                                                                                                                 enabled = true
+
