@@ -133,7 +133,7 @@ resource "cloudflare_notification_policy" "security_alerts" {
   account_id  = var.cloudflare_account_id
   name        = "VGS - Alertes sécurité"
   description = "Notifications pour attaques et incidents"
-  alert_type  = "ddos_attack_alert"
+  alert_type  = "advanced_ddos_attack_l7_alert"
   email_integration {
     id = "cloudflare-notification-email"
   }
@@ -147,7 +147,7 @@ resource "cloudflare_notification_policy" "origin_unreachable" {
   account_id  = var.cloudflare_account_id
   name        = "VGS - Origin indisponible"
   description = "Alerte si Render (origin) est injoignable"
-  alert_type  = "origin_error"
+  alert_type  = "http_alert_origin_error"
   email_integration {
     id = "cloudflare-notification-email"
   }
